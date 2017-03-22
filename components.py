@@ -12,80 +12,8 @@ Future changes:
 """
 import tkinter as tk
 import random
+from buttons import *
 
-class PlayerButton(tk.button):
-    # pass player, add species
-    pass
-
-class SpeciesButton(tk.button):
-    # + pop, body size, feed, add trait, eat
-    pass
-
-class PlantPhaseButton(tk.button):
-    # trait use    
-    pass
-
-class EvolvePhaseButton(tk.button):
-    #pass, add species, +pop,bodysize, add trait, trait use
-    pass
-
-class FeedPhaseButton(tk.button):
-    # feed, eat, pass?
-    pass
-
-class TraitUseButton(PlantPhaseButton, EvolvePhaseButton, FeedPhaseButton):
-    # feed phase because of intelligence
-    pass
-
-class AddTraitButton(EvolvePhaseButton, SpeciesButton):
-    # switch to remove trait when trait added
-    # when trait removed, switch back behavior
-    pass
-
-class AddPopulationButton(EvolvePhaseButton, SpeciesButton):
-    pass
-
-class AddBodySizeButton(EvolvePhaseButton, SpeciesButton):
-    pass
-
-class FeedButton(FeedPhaseButton, SpeciesButton):
-    pass
-
-class EatButton(FeedPhaseButton, SpeciesButton):
-    pass
-
-class PassButton(EvolvePhaseButton, FeedPhaseButton, PlayerButton):
-    # feed phase because of fat tissue
-    pass
-
-
-class TraitCard(tk.Frame):
-    """Frame containing trait card information"""
-    def __init__(self, hand):
-        tk.Frame.__init__(self, hand)
-        self.master = hand
-        self.name = ""
-        self.ability = ""
-        self.food = 0   # food that can be planted
-        
-    # Use function and button
-    # Includes use for food, use for trait, use for new species or upping pop, bs
-    # configure command depending on phase or player action 
-    # use class variable?
-    def discard(self):
-        """Send TraitCard to discard pile"""
-        #
-        pass        
-
-#def iterate_child_widgets():
-#    for associated_widget in frame.winfo_children():
-#    associated_widget.configure(state='disabled')
-    
-class Foraging(TraitCard):
-    pass
-
-class LongNeck(TraitCard):
-    pass
 
 class Evolution(tk.Frame):    
     # Generate list of all cards in game
@@ -198,7 +126,7 @@ class Evolution(tk.Frame):
             for c in range(Evolution.BASE_CARD_DRAW + player.num_species):
                 self.check_for_empty_deck()
                 # actually pops last element so pretend deck is flipped
-                player.hand.card_list.append(self.deck.pop())
+                player.hand.add_card(self.deck.pop())
         if self.continue_game:
             self.cards_left.set('Cards Left in Deck: ' + len(self.deck))
         else:
@@ -229,22 +157,86 @@ class Evolution(tk.Frame):
         pass
         
 
+class TraitCard(tk.Frame, name="None", ability="None", food=0):
+    """Frame containing trait card information"""
+    # Need a database to load trait cards from
+
+    def __init__(self, hand):
+        tk.Frame.__init__(self, hand)
+        self.master = hand
+        self.name = name
+        self.ability = ability
+        self.food = food   # food that can be planted
+        self.create_widgets()
+        
+    def create_widgets(self):
+        """Create Trait Card GUI elements"""
+        self.name_label = tk.Label(self, text=self.name)
+        self.ability_label = tk.Label(self, text=self.ability)
+        self.food_label = tk.Label(self, text="Food Eaten: ")
+        self.use_button = TraitUseButton(self, text="USE", command=self.use)
+        
+        self.name_label.grid()  
+        self.ability_label.grid()  
+        self.food_label.grid()  
+        self.use_button.grid()  
+        
+    def remove_from_hand(self):
+        """Remove this frame from hand frame"""
+        pass
+                                         
+    def use(self):
+        """Signal to hand that this card was used"""
+        master.use_trait_card(self)
+
+
 class Hand(tk.Frame):
     """Frame containing players' hands. 
     For humans, display frame below player's species"""
     def __init__(self, player):
         tk.Frame.__init__(self, player)
         self.master = player
+        self.empty = tk.BooleanVar()
+        self.empty.set(True)
+        self.empty.trace('w', self.toggle_empty_hand)
         self.num_cards = 0
         self.card_list = []
 
-    def use_trait_card(self):
+    def add_card(self, card):
+        """Add card to hand"""
+        self.card_list.append(card)
+        if self.empty.get() is True:
+            self.empty.set(False)    
+            
+    def activate_hand(self):
+        pass
+
+    def disable_hand(self):
+        for widget in self.winfo_children():
+            widget.config(state='disabled')
+    
+    def toggle_empty_hand(self):
+        """Disable buttons if hand is empty"""
+        # (depending on phase i.e. intelligence
+        pass
+
+    def use_trait_card(self, card):
         """Use trait card from hand for a variety of things"""
         # remove card from the list
-        return self.card_list.pop(i)
-        
-        # call current "use" command
-        
+        self.num_cards -= 1        
+        temp = self.card_list.pop(self.card_list.index(card))
+        if self.num_cards == 0:
+           self.empty.set(True) 
+        #check if hand is now empty
+        return temp
+        # Use function and button
+        # Includes use for food, use for trait, use for new species or upping pop, bs
+        # configure command depending on phase or player action 
+        # use class variable?
+
+    def update_hand(self):
+        # update after dealt cards or when a card is used
+        pass
 
 class Player(tk.Frame):
     """Defines base player. Mechanics of playing. Child classes define special
@@ -338,8 +330,8 @@ class AI_Player(Player):
     
     
 class Species(tk.Frame):
-    MAX_POP = 6
-    MAX_SIZE = 6
+    MAX_POP = 6    # max population
+    MAX_SIZE = 6   # max body size
     def __init__(self, player):
         tk.Frame.__init__(self, player)
         self.master = player # which player owns this species
@@ -348,71 +340,96 @@ class Species(tk.Frame):
         if isinstance(self.master, Human_Player): # better way to do this?
             self.human = True    
         self.carnivore = False    # carnivore flag
-        self.population = 1
-        self.body_size = 1
-        self.food = 0
+
+        self.hungry = True
         
-#        self.population = tk.IntVar()
-#        self.population.set(1)
-#        self.body_size = tk.IntVar()
-#        self.body_size.set(1)
+        self.food = tk.IntVar()
+        self.food.set(0)
+        self.food.trace('w', self.set_food_dependent_flags)
+        
+        self.population = tk.IntVar()
+        self.population.set(1)
+        self.population.trace('w', self.set_population_dependent_flags)
+
+        self.body_size = tk.IntVar()
+        self.body_size.set(1)
+        
         self.traits = {}          # trait set
         self.create_widgets()
         
     def create_widgets(self):
+        """Create Species GUI elements"""
         self.feed_button = FeedButton(self, text="FEED")
-        self.food_label = tk.Label(self, textvariable)
-        self.eat_button = EatButton(self, text="EAT")
-        self.population_button = tk.Button(self, text=self.population,
-                                         command=self.command('p'))
-        self.body_size_button = tk.Button(self, text=self.body_size,
-                                         command=self.command('s'))                         
-        self.population_button.grid()
-        self.body_size_button.grid()
+        self.food_label1 = tk.Label(self, text="Food Eaten: ")
+        self.food_label2 = tk.Label(self, textvariable=self.food)
+        self.eat_button = EatButton(self, text="EAT ME")
+        self.add_trait_buttons = []
+        self.add_trait_labels = []
+        for t in range(master.master.trait_limit):
+            self.add_trait_buttons.append(AddTraitButton(self,text="Add Trait"))
+            self.add_trait_labels.append(tk.Label(self, text="No Trait"))
+        self.population_label1 = tk.Label(self, text="Population: ")
+        self.population_label2 = tk.Label(self, textvariable=self.population)
+        self.body_size1 = tk.Label(self, text="Body Size: ")
+        self.body_size2 = tk.Label(self, textvariable=self.body_size)
+        self.add_population_button = AddPopulationButton(self, text="+1 Population",
+                                         command=self.add_population)
+        self.add_body_size_button = AddBodySizeButton(self, text="+1 Body Size",
+                                         command=self.add_body_size)  
+                                         
+        self.feed_button.grid(row=0,column=0)           
+        self.food_label1.grid(row=0,column=1)   
+        self.food_label2.grid(row=0,column=2)   
+        self.eat_button.grid(row=0,column=3)         
+        for t in range(master.master.trait_limit):            
+            self.add_trait_buttons[t].grid(row=t+1,column=0)
+            self.add_trait_labels[t].grid(row=t+1,column=1,columnspan=3)       
+                                         
+        self.population_label1.grid(row=5,column=0)
+        self.population_label2.grid(row=5,column=1)
+        self.body_size1.grid(row=5,column=2)
+        self.body_size2.grid(row=5,column=3) 
+        self.add_population_button.grid(row=6,column=0,columnspan=2)
+        self.add_body_size_button.grid(row=6,column=2,columnspan=2)
 
-    def command(self, stat):
-        """Button command for species depending on human player or not
-           stat -> 'p' for population, 's' for body size"""
-        if self.human:
-            if stat == 'p':
-                #return self.add_population
-                return self.setup_add_population
-            elif stat == 's':
-                return self.add_body_size
-        else:
-            return None
-            
-    def setup_add_population(self):
-        """Check if it's possible to add population"""
-        # Future: make that button inactive if it isn't
-        if self.population < Species.MAX_POP and self.master.hand.num_cards>0:
-            # make all buttons except player's hand inactive
-            # change trait_card use button command to discard.
+    def set_food_dependent_flags(self):
+        """Set flags depending on how much food is eaten"""
+        # check if self.food <= self.population
+        # change self.hungry
+        pass
+    
+    def set_pop_dependent_flags(self):
+        """Set flags depending on how much pop there is"""
+        # check if self.food <= self.population
+        # change self.hungry
+        # change if population can be added (6)
+        if self.population.get() == Species.MAX_POP:
+            # turn off add population button
             pass
-        # else
-        # do nothing
-        
+    
+    def disable_all_buttons(self):
+        """Disable all buttons in this species"""      
+        for widget in self.winfo_children():
+            widget.config(state='disabled')
+        pass
+                    
     def add_population(self):
         """Increase population by 1"""
         # First, check if less than max size
-        if self.population < Species.MAX_POP:
-            # Require discard
-            
-            self.population += 1
-            self.population_button.config(text=self.population)
-            #raise PopulationOverflowException("Cannot add more than 6 population")
+        if self.population.get() >= Species.MAX_POP:
+            raise PopulationOverflowException("Cannot add more than 6 population")         
+        self.population.set(self.population.get()+1)
 
     def add_body_size(self):
         """Increase body size by 1"""
-        if self.body_size >= 6:
+        if self.body_size.get() >= Species.MAX_SIZE:
             raise BodySizeOverflowException("Cannot add more than 6 body size")
-        else:
-            self.body_size += 1
-            self.body_size_button.config(text=self.body_size)
+        self.body_size.set(self.body_size.get()+1)
+
 
     def feed(self):
         """Feed this species from either the watering hole or another species"""
-        self.food
+        # or intelligence discard
         pass
     
     def starve(self):
