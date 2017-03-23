@@ -30,7 +30,7 @@ class TraitUseButton(PlantPhaseButton, EvolvePhaseButton, FeedPhaseButton):
     # feed phase because of intelligence
     pass
 
-class AddTraitButton(EvolvePhaseButton, SpeciesButton):
+class AddTraitButton(EvolvePhaseButton, SpeciesButton):    
     # switch to remove trait when trait added
     # when trait removed, switch back behavior
     pass
