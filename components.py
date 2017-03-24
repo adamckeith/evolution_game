@@ -6,33 +6,36 @@ Created on Sun Mar 19 18:43:22 2017
 
 Design:
     Only one human player or less currently intended
+    If a button can be pressed, it is a logical move and does not have error
+        checking. All possible moves are made available. 
 
 Possible Issues:
-    All widgets have parent instance as attribute (no, its a reference)
+    Do I really need setup_phase?
+    
     
 Future changes:
     Make things that can be shouldn't pressed inactive
     Make species gui a little more compact
+    Nonzero cards in other players signals that they have yet to evolve 
+        (how to weigh that?)
 """
 import tkinter as tk
 import random
 from buttons import *
+import time
 
 class TraitCard(tk.Frame):
     """Frame containing trait card information"""
     # Need a database to load trait cards from
-
-    def __init__(self, hand=None, name="None", ability="None", food=0):
-        tk.Frame.__init__(self, hand)
+    def __init__(self, hand=None, name="None", ability="None", food=10):
         self.hand = hand
         self.name = name
         self.ability = ability
         self.food = food   # food that can be planted
-        self.create_widgets()
-        self.pack_widgets()
         
     def create_widgets(self):
         """Create Trait Card GUI elements"""
+        # only ever shown card in player's hand, so create widgets when dealt
         self.name_label = tk.Label(self, text=self.name)
         self.ability_label = tk.Label(self, text=self.ability)
         self.food_label = tk.Label(self, text="Food: " + str(self.food))
@@ -42,7 +45,16 @@ class TraitCard(tk.Frame):
         self.name_label.pack()  
         self.ability_label.pack()  
         self.food_label.pack()  
-        self.use_button.pack()  
+        self.use_button.pack()
+        
+    def dealt(self, new_hand=None):
+        """Change master frame of this card"""
+        # be careful because old_hand is still the master frame
+        # but new_hand is the logical owner
+        tk.Frame.__init__(self, new_hand)
+        self.change_hands(new_hand)  
+        self.create_widgets()
+        self.pack_widgets()
   
     def change_hands(self, new_hand=None):
         """Change master frame of this card"""
@@ -68,12 +80,14 @@ class Evolution(tk.Frame):
     # Generate list of all cards in game
     all_cards = []
     all_cards.extend([TraitCard() for i in range(20)]) 
+    #more_cards = []
+    #more_cards.extend([TraitCard() for i in range(10)]) 
     TRAIT_LIMIT = 3
     TRAIT_LIMIT_2p = 2
     BASE_CARD_DRAW = 3
     PHASE_NAMES = ["PLANT","EVOLVE","FEED"]
     
-    def __init__(self, master=None, num_players=3, first_player=None):
+    def __init__(self, master=None, num_players=3, first_player=None): 
         tk.Frame.__init__(self, master)
         #self.title("Evolution")
         self.config(background='green')
@@ -86,6 +100,8 @@ class Evolution(tk.Frame):
         #self.food_on_hole = 0 # watering hole food
         self.food_on_hole = tk.IntVar() # watering hole food
         self.food_on_hole.set(0)
+        self.food_deck = []    # temporary place to store cards to plant food
+
 
         # Deck of cards
         self.deck = Evolution.all_cards
@@ -118,10 +134,13 @@ class Evolution(tk.Frame):
         
         # Set up players' frames
         #self.players = [Player(self) for i in range(self.num_players)]
-        self.players = [AI_Player(self) for i in range(self.num_players-1)]
-        self.players.append(Human_Player(self))
+        self.players = [AI_Player(self,i) for i in range(self.num_players-1)]
+        ### ASSUMES ONLY ONE HUMAN PLAYER ####
+        self.players.append(Human_Player(self,self.num_players-1))
         for player in self.players:
             player.pack(fill='both',expand=True,anchor="nw")
+        #self.update()
+        #self.after(5000,self.play_game())
 
     def create_widgets(self):
         ### BUILD GUI ####
@@ -155,9 +174,8 @@ class Evolution(tk.Frame):
         self.food_label1.pack(side="left",fill='x',expand=True,anchor="nw")
         self.food_label2.pack(side="left",fill='x',expand=True,anchor="nw")
 
-    def gui_phase_change(self):
+    def gui_phase_change(self, *args):
         """Make certain widgets inactive during different game phases"""
-        self.phase.get()
         self.phase_name.set(Evolution.PHASE_NAMES[self.phase.get()])
         pass 
     
@@ -192,24 +210,54 @@ class Evolution(tk.Frame):
 
     def play_game(self):
         """Loop phases until game over condition"""
-        while(self.continue_game):
-            self.deal_cards()
-            self.plant_food()
-            self.evolve()
-            self.feed()
-            # update current `first player
-            self.first_player = self.index_wrap(1)
-            self.era.set(self.era.get()+1)
+            # need everyone to pass to move to next phase?
+        self.deal_cards()
+        self.plant_food()
+#        while(self.continue_game):
+#            # need everyone to pass to move to next phase?
+#            self.deal_cards()
+#            self.plant_food()
+#            self.evolve()
+#            self.feed()
+#            # update current `first player
+#            self.first_player = self.index_wrap(1)
+#            self.era.set(self.era.get()+1)
+        
 
+    def next_phase(self):
+        self.phase.set((self.phase.get()+1) % len(Evolution.PHASE_NAMES))
+
+    def pass_control_next(self, player=None):
+        # depending on phase, pass control to the game
+        # for example, once we get back to first player on plant phase, plant
+        # the food
+        if player is None:
+            player=self.first_player
+            
+        if self.phase.get() == 0:
+            if self.index_wrap(self.players.index(player)+1) == self.first_player:
+                total = sum([f.food for f in self.food_deck])
+                self.food_on_hole.set(self.food_on_hole.get()+total)
+                self.discard.extend(self.food_deck)
+                self.food_deck = []
+                # pass control to next phase
+            else:
+                self.players[self.index_wrap(self.players.index(player)+1)].take_turn()
+        
+        # later phases, all players have no possible moves
+
+    def broadcast_phase_change(self):
+        """Setup new phase for all players"""
+        # probably should make this a callback on players when self.phase is set
+        for player in self.players:
+            player.setup_phase()
+            
     def plant_food(self):
         """Collect food cards and add food to watering hole"""
         self.phase.set(0)
-        total = 0
-        for player in self.players:
-            card = player.request_payment("food")
-            total += card.food
-            self.discard.append(card)
-        self.food_on_hole.set(self.food_on_hole.get()+total)
+        #self.broadcast_phase()
+        self.players[self.first_player].take_turn()
+    
             
     def evolve(self):
         """Allow each player to evolve his ecosystem"""
@@ -246,7 +294,7 @@ class Hand(tk.Frame):
     def add_card(self, card):
         """Add card to hand"""
         self.unpack_cards()
-        card.change_hands(self)
+        card.dealt(self)
         self.card_list.append(card)
         self.num_cards.set(self.num_cards.get()+1)
         # pretty inefficient to unpack and pack on every card addition...
@@ -264,9 +312,6 @@ class Hand(tk.Frame):
         """Unpack card frames"""
         for card in self.card_list:
             card.pack_forget()
-
-    def activate_hand(self):
-        pass
 
     def disable(self):
         for card in self.card_list:
@@ -295,19 +340,10 @@ class Hand(tk.Frame):
         if self.num_cards.get() == 0:
            self.empty.set(True)
            self.toggle_empty_hand()
-
-
         card.pack_forget()           
         card.change_hands()  # forget that you belonged to this hand!
         self.player.make_payment(card)
-        # Use function and button
-        # Includes use for food, use for trait, use for new species or upping pop, bs
-        # configure command depending on phase or player action 
-        # use class variable?
-        
-    def update_hand(self):
-        # update after dealt cards or when a card is used
-        pass
+
 
 class Player(tk.Frame):
     """Defines base player. Mechanics of playing. Child classes define special
@@ -322,9 +358,11 @@ class Player(tk.Frame):
             pass
             #self.disable_all_buttons()
         
-    def __init__(self, game):
+    def __init__(self, game, player_index):
         tk.Frame.__init__(self,game)
         self.game = game
+        self.game.phase.trace('w', self.setup_phase)
+        self.player_index = player_index
         self.active_player = tk.BooleanVar()
         self.active_player.set(False)
         self.active_player.trace('w', self.change_player_state)
@@ -338,35 +376,29 @@ class Player(tk.Frame):
         # This block order is very important to make the gui pack correctly        
         self.create_widgets()
         self.pack_player_info_frame()
-        self.ecosystem.append(Species(self)) # instead of calling add species
+        # instead of calling add species (because it requests payment)
+        self.ecosystem.append(Species(self)) 
         self.pack_hand()
         self.pack_ecosystem()
-        
-#        self.pack_ecosystem()        
         
         # Active player border highlight?
         
     def create_widgets(self):        
-        self.hand = Hand(self)
-        # test add cards
-        self.hand.add_card(TraitCard(self.hand))
-        self.hand.add_card(TraitCard(self.hand))
-        #self.hand.card_list.append(TraitCard(self.hand))
-        #self.hand.num_cards.set(self.hand.num_cards.get()+1)
-        #self.hand.pack_cards()
-        
+        self.hand = Hand(self)        
         self.player_info_frame = tk.Frame(self)
         pif = self.player_info_frame
-        self.cards_in_hand_label1 = tk.Label(pif, text="# of Cards: ")
+        self.cards_in_hand_label1 = tk.Label(pif, text="Number of Cards: ")
         self.cards_in_hand_label2 = tk.Label(pif, textvariable=self.hand.num_cards)
         self.food_label1 = tk.Label(pif, text="Food in Bag:")
         self.food_label2 = tk.Label(pif, textvariable=self.food_eaten)
-        self.pass_button = PassButton(pif,text="PASS", command=None)
+        self.pass_button = PassButton(pif,text="PASS", command=self.pass_player)
 
         self.add_species_left_button = AddSpeciesLeftButton(
-                self, text="Add Species Left", command=self.add_species_left)
+                self, text="Add Species Left", 
+                command=lambda:self.add_species('L'))
         self.add_species_right_button = AddSpeciesRightButton(
-                self, text="Add Species Right", command=self.add_species_right)
+                self, text="Add Species Right", 
+                command=lambda:self.add_species('R'))
                 
     def pack_player_info_frame(self):
         """Pack Player information bar"""
@@ -378,7 +410,7 @@ class Player(tk.Frame):
         self.pass_button.pack(side='left',fill='x',expand=True,anchor="nw")
     
     def pack_hand(self):
-        """Pack hand a"""
+        """Pack hand"""
         self.hand.pack(side="bottom")      
            
     def pack_ecosystem(self):
@@ -413,15 +445,27 @@ class Player(tk.Frame):
             species.enable()
         
     def make_payment(self, card):
+        #maybe, check payment type and game phase to distinguish how to discard
+        # and what to do next
+        if self.payment_type is None:
+            raise(ValueError)
         if self.payment_type == "food":
-            self.game.food_adder(card)
+            self.game.food_deck.append(card)
+            self.pass_player()
+            # pass control back to game?
         elif self.payment_type == "discard":
             self.game.discard.append(card)
+            # since evolve and feed are "recursive", call set up phase again?
+            # or maybe like a make_move(self)
+            # if hand is empty, disable_buttons except pass
         else: # it's a reference to the species that called make_payment
-            self.payment_type.add_trait(card)
+            self.payment_type.attach_trait(card)
+            # if hand is empty, disable_buttons except pass
         self.payment_type = None
         # for now,
         self.enable_all_buttons()
+        self.hand.disable()
+        
         # self.setup_phase() #except for feed phase (unless game calls request_payment)
         # if evolve phase, discard or add trait
         # if feed phase, use intelligence (discard)
@@ -433,23 +477,39 @@ class Player(tk.Frame):
         self.disable_all_buttons()
         self.hand.enable()
     
-    def setup_phase(self, phase, active_player):
-        # evolve phase is recursive
-        # feed, request_payment("food")
-        # change command for self.pass_button
+    
+    def take_turn(self):
+        if self.phase == 0: #plant phase
+            self.request_payment("food")
+        if self.phase == 1:
+            self.enable_all_buttons()
+            if self.hand.empty.get() is True: # if the hand is empty
+                self.pass_player()
+            pass
+        
+    def check_if_can_evolve(self):
+        """Check if there are evolve options"""
+        # This sounds similar to generate actions
         pass
     
-    def add_species_left(self):
-        """Add one species to left of the current ecosystem"""       
+    def setup_phase(self, *args):
+        self.phase = self.game.phase.get()
+        if self.phase == 0: #plant phase
+            self.disable_all_buttons()
+            self.hand.enable()
+            
+        elif self.phase == 1: #evolve phase
+            
+            self.pass_button.config(state="normal") # you can always pass
+  
+    def add_species(self, side='R'):
+        """Add one species to left or right of the ecosystem"""       
         self.unpack_ecosystem()
-        self.ecosystem.insert(0,Species(self))
-        self.pack_ecosystem()
-        self.request_payment("discard")
-
-    def add_species_right(self):
-        """Add one species to right of the current ecosystem"""    
-        self.unpack_ecosystem()
-        self.ecosystem.append(Species(self))
+        if side == 'L':
+            self.ecosystem.insert(0,Species(self))
+        elif side == "R":
+            self.ecosystem.append(Species(self))
+        self.num_species+=1
         self.pack_ecosystem()
         self.request_payment("discard")
 
@@ -462,17 +522,24 @@ class Player(tk.Frame):
         """Update species frames if some have gone extinct?"""
         pass
     
+    def pass_player(self):
+        """Pass control to the next player and shutdown input"""
+        # pass control to next player by asking game who that is
+        self.disable_all_buttons()
+        self.game.pass_control_next(self)
     
 class Human_Player(Player):
     """Player with buttons to modify species and a hand showing"""
-    def __init__(self, game):
-        Player.__init__(self, game)
+    def __init__(self, game, player_index):
+        Player.__init__(self, game, player_index)
         self.config(background='yellow')
 
 
 class AI_Player(Player):
-    def __init__(self, game):
-        Player.__init__(self, game)
+    def __init__(self, *args):
+        Player.__init__(self, *args)
+#    def __init__(self, game, player_index):
+#        Player.__init__(self, game, player_index)
         self.config(background='blue')
         # gonna have to call this everytime a species is added
         # or a trait is added?
@@ -482,31 +549,44 @@ class AI_Player(Player):
         # Don't Pack hand because humans shouldn't see that
         pass
         
-    def add_species_left(self):
+    def add_species(self, side='R'):
         """Add one species to left of the current ecosystem"""       
-        Player.add_species_left(self)
-        self.disable_all_buttons()  
-        # make payment 
+        #self.disable_all_buttons()  
+        Player.add_species(self, side=side)
         
-    def add_species_right(self):
-        """Add one species to right of the current ecosystem"""    
-        Player.add_species_right(self)
-        self.disable_all_buttons()
-        # make payment 
 
+    def make_payment(self, card):
+        Player.make_payment(self, card)
+        self.disable_all_buttons()  
+        
+        # self.setup_phase() #except for feed phase (unless game calls request_payment)
+        # if evolve phase, discard or add trait
+        # if feed phase, use intelligence (discard)
+        # return "control" to player
+        
     def request_payment(self, payment_type=None):
         """Make only trait card use buttons active"""
         self.payment_type = payment_type
-        # choose a card AI
+
+        # choose a card AI        
+        self.choose_card_to_discard()
+        #self.make_payment(card)
+
+    def choose_card_to_discard(self):
+        """Pick a card to discard for payment. 
+        Currently, do it randomly since I don't have an AI yet."""
+        random.choice(self.hand.card_list).use()
         
     def toggle_eat_me_buttons(self):
         pass
     
     def generate_possible_actions(self):
+        # phase dependent 
+        # maybe make a tree?
         pass
     
-    def take_turn():
-        pass
+#    def take_turn():
+#        pass
     def feed():
         pass
     
@@ -537,7 +617,7 @@ class Species(tk.Frame):
         self.body_size.set(1)
         
         
-        self.traits = {}          # trait set
+        self.traits = set()          # trait set
         self.trait_index_to_change = None # trait index to update
         self.create_widgets()
         self.grid_widgets()
@@ -629,23 +709,25 @@ class Species(tk.Frame):
         
     def attach_trait(self, card):
         self.traits.add(card)
-        self.add_trait_labels[self.trait_index_to_change]=card.name
+        self.trait_labels[self.trait_index_to_change].config(text=card.name)
         self.trait_index_to_change = None
 
     
     def add_population(self):
-        """Increase population by 1"""
+        """Increase population by 1. Assumes this is allowed"""
         # First, check if less than max size
         if self.population.get() >= Species.MAX_POP:
             raise PopulationOverflowException("Cannot add more than 6 population")         
         self.population.set(self.population.get()+1)
+        self.player.request_payment("discard")
 
     def add_body_size(self):
-        """Increase body size by 1"""
+        """Increase body size by 1. Assumes this is allowed"""
         if self.body_size.get() >= Species.MAX_SIZE:
             raise BodySizeOverflowException("Cannot add more than 6 body size")
         self.body_size.set(self.body_size.get()+1)
-
+        self.player.request_payment("discard")
+        
     def feed(self):
         """Feed this species from either the watering hole or another species"""
         # or intelligence discard
@@ -707,9 +789,12 @@ class TraitRepeatException(Exception):
     pass
 
 
-game = Evolution()
+game = Evolution(first_player=0)
 game.pack(fill="both", expand=True)
+game.update()
+game.after(5000,game.play_game())
 game.mainloop()
+
 #
 #def main(): #run mainloop 
 #    game = Evolution()
